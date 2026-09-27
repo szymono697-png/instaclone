@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InstaClone z Rejestracją</title>
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Browser Image Compression -->
+  <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.mjs" type="module"></script>
+  
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: #000; color: #fff; display: flex; justify-content: center; min-height: 100vh; }
+    
+    .app-container {
+      width: 100%;
+      max-width: 470px;
+      background: #000;
+      border-left: 1px solid #262626;
+      border-right: 1px solid #262626;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: relative;
+    }
+
+    /* Top Bar */
+    .top-bar {
+      height: 60px;
+      border-bottom: 1px solid #262626;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      position: sticky;
+      top: 0;
+      background: #000;
+      z-index: 10;
+    }
+    .logo { font-size: 22px; font-weight: bold; letter-spacing: 1px; }
+
+    /* Content Area */
+    .content-area { flex: 1; overflow-y: auto; padding-bottom: 60px; }
+
+    /* Auth Screen */
+    .auth-container { padding: 30px 20px; display: flex; flex-direction: column; gap: 12px; }
+    .auth-container h2 { text-align: center; margin-bottom: 15px; }
+
+    /* Feed & Post Card */
+    .post-card { border-bottom: 1px solid #262626; margin-bottom: 15px; }
+    .post-header { display: flex; align-items: center; padding: 10px 14px; gap: 10px; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; background: #333; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
+    .username { font-weight: 600; font-size: 14px; }
+    
+    .post-media { width: 100%; max-height: 580px; object-fit: contain; background: #050505; display: block; }
+    
+    .post-actions { display: flex; gap: 16px; padding: 10px 14px; font-size: 20px; }
+    .action-btn { cursor: pointer; background: none; border: none; color: #fff; font-size: 20px; }
+    .action-btn.liked { color: #ed4956; }
+    
+    .post-likes { font-weight: 600; font-size: 14px; padding: 0 14px 4px; }
+    .post-caption { padding: 0 14px 10px; font-size: 14px; }
+    .post-caption span { font-weight: 600; margin-right: 6px; }
+
+    /* Forms & Views */
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .form-box { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+    .form-box input, .form-box textarea, .form-box select, .form-box button {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #363636;
+      background: #121212;
+      color: #fff;
+      font-size: 14px;
+    }
+    .form-box button { background: #0095f6; font-weight: bold; cursor: pointer; border: none; }
+    .form-box button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .secondary-btn { background: #262626 !important; margin-top: 5px; }
+
+    /* Reels View */
+    .reel-card { height: calc(100vh - 120px); position: relative; snap-align: start; background: #000; }
+    .reel-video { width: 100%; height: 100%; object-fit: cover; }
+    .reel-overlay { position: absolute; bottom: 20px; left: 15px; right: 15px; z-index: 2; }
+
+    /* Bottom Navigation */
+    .bottom-nav {
+      height: 50px;
+      border-top: 1px solid #262626;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      background: #000;
+    }
+    .nav-item { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; }
+    
+    .empty-state { text-align: center; padding: 40px 20px; color: #8e8e8e; }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="logo">Instagram</div>
+    <div id="user-info" style="font-size: 12px; color: #8e8e8e;">Niezalogowany</div>
+  </div>
+
+  <!-- Main Scrollable Content -->
+  <div class="content-area">
+    
+    <!-- View Auth: Logowanie / Rejestracja -->
+    <div id="view-auth" class="view active">
+      <div class="form-box auth-container">
+        <h2 id="auth-title">Zaloguj się</h2>
+        
+        <input type="text" id="auth-username" placeholder="Nazwa użytkownika (nickname)" style="display: none;">
+        <input type="email" id="auth-email" placeholder="E-mail" required>
+        <input type="password" id="auth-password" placeholder="Hasło (min. 6 znaków)" required>
+        
+        <button id="auth-submit-btn" onclick="handleAuth()">Zaloguj się</button>
+        <button class="secondary-btn" id="auth-toggle-btn" onclick="toggleAuthMode()">Nie masz konta? Zarejestruj się</button>
+        
+        <div id="auth-error" style="color: #ed4956; font-size: 13px; text-align: center;"></div>
+      </div>
+    </div>
+
+    <!-- View 1: Główny Feed -->
+    <div id="view-feed" class="view">
+      <div id="feed-container"></div>
+    </div>
+
+    <!-- View 2: Reels -->
+    <div id="view-reels" class="view">
+      <div id="reels-container"></div>
+    </div>
+
+    <!-- View 3: Dodawanie Nowego Postu / Rolki -->
+    <div id="view-upload" class="view">
+      <div class="form-box">
+        <h3 style="margin-bottom: 10px;">Dodaj nowy wpis</h3>
+        <select id="media-type">
+          <option value="photo">Zdjęcie (Post)</option>
+          <option value="reel">Filmik (Reel)</option>
+        </select>
+        <input type="file" id="file-input" accept="image/*,video/*" required>
+        <textarea id="caption-input" rows="3" placeholder="Napisz opis..."></textarea>
+        <button id="upload-btn" onclick="handleUpload()">Opublikuj (Max 720p)</button>
+        <div id="upload-progress" style="font-size: 13px; color: #0095f6; text-align: center;"></div>
+      </div>
+    </div>
+
+    <!-- View 4: Profil -->
+    <div id="view-profile" class="view">
+      <div class="form-box" style="text-align: center;">
+        <h3 id="profile-username" style="margin-bottom: 10px;">@username</h3>
+        <button class="secondary-btn" onclick="handleLogout()">Wyloguj się</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Nav -->
+  <div class="bottom-nav" id="bottom-nav" style="display: none;">
+    <button class="nav-item" onclick="switchView('feed')">🏠</button>
+    <button class="nav-item" onclick="switchView('reels')">🎬</button>
+    <button class="nav-item" onclick="switchView('upload')">➕</button>
+    <button class="nav-item" onclick="switchView('profile')">👤</button>
+  </div>
+</div>
+
+<script type="module">
+  import imageCompression from 'https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.mjs';
+
+  // --- KONFIGURACJA SUPABASE ---
+  const SUPABASE_URL = 'HTTPS://TWOJ-PROJECT.supabase.co';
+  const SUPABASE_ANON_KEY = 'TWOJ_ANON_KEY';
+  
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let currentUser = null;
+  let currentProfile = null;
+  let isSignUpMode = false;
+
+  // Sprawdzanie sesji przy starcie
+  document.addEventListener('DOMContentLoaded', async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      await setupUserSession(session.user);
+    } else {
+      switchView('auth');
+    }
+  });
+
+  // Ustawienia sesji użytkownika
+  async function setupUserSession(user) {
+    currentUser = user;
+    
+    // Pobranie profilu (nickname)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    currentProfile = profile;
+    document.getElementById('user-info').innerText = `@${profile?.username || 'user'}`;
+    document.getElementById('profile-username').innerText = `@${profile?.username || 'user'}`;
+    document.getElementById('bottom-nav').style.display = 'flex';
+    
+    switchView('feed');
+  }
+
+  // --- REJESTRACJA I LOGOWANIE ---
+  window.toggleAuthMode = function() {
+    isSignUpMode = !isSignUpMode;
+    document.getElementById('auth-title').innerText = isSignUpMode ? 'Utwórz konto' : 'Zaloguj się';
+    document.getElementById('auth-submit-btn').innerText = isSignUpMode ? 'Zarejestruj się' : 'Zaloguj się';
+    document.getElementById('auth-toggle-btn').innerText = isSignUpMode ? 'Masz już konto? Zaloguj się' : 'Nie masz konta? Zarejestruj się';
+    document.getElementById('auth-username').style.display = isSignUpMode ? 'block' : 'none';
+  };
+
+  window.handleAuth = async function() {
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value.trim();
+    const username = document.getElementById('auth-username').value.trim();
+    const errorEl = document.getElementById('auth-error');
+    errorEl.innerText = '';
+
+    if (!email || !password) {
+      errorEl.innerText = 'Wypełnij e-mail i hasło.';
+      return;
+    }
+
+    try {
+      if (isSignUpMode) {
+        if (!username) {
+          errorEl.innerText = 'Podaj nazwę użytkownika!';
+          return;
+        }
+
+        // Rejestracja w Supabase Auth
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+
+        // Tworzenie profilu w tabeli profiles
+        if (data.user) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert([{ id: data.user.id, username: username }]);
+            
+          if (profileError) throw profileError;
+          await setupUserSession(data.user);
+        }
+      } else {
+        // Logowanie
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        await setupUserSession(data.user);
+      }
+    } catch (err) {
+      errorEl.innerText = err.message;
+    }
+  };
+
+  window.handleLogout = async function() {
+    await supabase.auth.signOut();
+    currentUser = null;
+    currentProfile = null;
+    document.getElementById('bottom-nav').style.display = 'none';
+    document.getElementById('user-info').innerText = 'Niezalogowany';
+    switchView('auth');
+  };
+
+  // --- NAVIGATION ---
+  window.switchView = function(viewName) {
+    document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+    document.getElementById(`view-${viewName}`).classList.add('active');
+
+    if (viewName === 'feed') loadFeed();
+    if (viewName === 'reels') loadReels();
+  };
+
+  // --- KOMPRESJA DO 720p ---
+  async function compressPhoto(file) {
+    const options = {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1280, // Max 720p
+      useWebWorker: true,
+      fileType: 'image/jpeg'
+    };
+    return await imageCompression(file, options);
+  }
+
+  function resizeVideoTo720p(file) {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.src = URL.createObjectURL(file);
+      video.muted = true;
+      
+      video.onloadedmetadata = () => {
+        let width = video.videoWidth;
+        let height = video.videoHeight;
+        const maxDimension = 1280;
+
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        const stream = canvas.captureStream(30);
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        const chunks = [];
+
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/mp4' });
+          resolve(new File([blob], file.name.replace(/\.[^/.]+$/, ".mp4"), { type: 'video/mp4' }));
+        };
+
+        video.play();
+        mediaRecorder.start();
+
+        function drawFrame() {
+          if (!video.ended && !video.paused) {
+            ctx.drawImage(video, 0, 0, width, height);
+            requestAnimationFrame(drawFrame);
+          } else {
+            mediaRecorder.stop();
+          }
+        }
+        drawFrame();
+      };
+    });
+  }
+
+  // --- PUBLIKACJA POSTU ---
+  window.handleUpload = async function() {
+    const type = document.getElementById('media-type').value;
+    const fileInput = document.getElementById('file-input');
+    const caption = document.getElementById('caption-input').value.trim();
+    const progressText = document.getElementById('upload-progress');
+    const uploadBtn = document.getElementById('upload-btn');
+
+    if (!fileInput.files[0]) {
+      alert('Wybierz plik!');
+      return;
+    }
+
+    let file = fileInput.files[0];
+    uploadBtn.disabled = true;
+
+    try {
+      progressText.innerText = 'Kompresja do 720p...';
+      if (file.type.startsWith('image/')) {
+        file = await compressPhoto(file);
+      } else if (file.type.startsWith('video/')) {
+        file = await resizeVideoTo720p(file);
+      }
+
+      progressText.innerText = 'Wysyłanie pliku...';
+      const fileName = `${currentUser.id}/${Date.now()}_${file.name}`;
+      const { error: storageError } = await supabase.storage
+        .from('posts')
+        .upload(fileName, file);
+
+      if (storageError) throw storageError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('posts')
+        .getPublicUrl(fileName);
+
+      progressText.innerText = 'Zapisywanie posta...';
+      const { error: dbError } = await supabase
+        .from('posts')
+        .insert([
+          {
+            user_id: currentUser.id,
+            media_url: publicUrlData.publicUrl,
+            type: type,
+            caption: caption,
+            likes_count: 0
+          }
+        ]);
+
+      if (dbError) throw dbError;
+
+      progressText.innerText = 'Opublikowano!';
+      document.getElementById('caption-input').value = '';
+      fileInput.value = '';
+
+      setTimeout(() => {
+        progressText.innerText = '';
+        uploadBtn.disabled = false;
+        switchView('feed');
+      }, 1000);
+
+    } catch (err) {
+      console.error(err);
+      alert('Błąd: ' + err.message);
+      progressText.innerText = '';
+      uploadBtn.disabled = false;
+    }
+  };
+
+  // --- POBIERANIE FEEDU ---
+  async function loadFeed() {
+    const container = document.getElementById('feed-container');
+    container.innerHTML = '<div class="empty-state">Ładowanie...</div>';
+
+    // Pobieramy posty razem z danymi profilu z tabeli profiles
+    const { data: posts, error } = await supabase
+      .from('posts')
+      .select('*, profiles(username)')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      container.innerHTML = `<div class="empty-state">Błąd: ${error.message}</div>`;
+      return;
+    }
+
+    if (!posts || posts.length === 0) {
+      container.innerHTML = '<div class="empty-state">Brak postów. Dodaj pierwszy post!</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    posts.forEach(post => {
+      const card = document.createElement('div');
+      card.className = 'post-card';
+      const username = post.profiles?.username || 'użytkownik';
+      const initial = username.charAt(0).toUpperCase();
+
+      const mediaElement = post.type === 'reel' 
+        ? `<video class="post-media" src="${post.media_url}" controls loop></video>`
+        : `<img class="post-media" src="${post.media_url}" alt="Post">`;
+
+      card.innerHTML = `
+        <div class="post-header">
+          <div class="avatar">${initial}</div>
+          <div class="username">${escapeHtml(username)}</div>
+        </div>
+        ${mediaElement}
+        <div class="post-actions">
+          <button class="action-btn" onclick="toggleLike('${post.id}', this)">❤️</button>
+        </div>
+        <div class="post-likes"><span id="likes-${post.id}">${post.likes_count || 0}</span> polubień</div>
+        <div class="post-caption">
+          <span>${escapeHtml(username)}</span>${escapeHtml(post.caption || '')}
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  // --- POBIERANIE ROLEK ---
+  async function loadReels() {
+    const container = document.getElementById('reels-container');
+    container.innerHTML = '<div class="empty-state">Ładowanie rolek...</div>';
+
+    const { data: reels, error } = await supabase
+      .from('posts')
+      .select('*, profiles(username)')
+      .eq('type', 'reel')
+      .order('created_at', { ascending: false });
+
+    if (error || !reels || reels.length === 0) {
+      container.innerHTML = '<div class="empty-state">Brak rolek.</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    reels.forEach(reel => {
+      const card = document.createElement('div');
+      card.className = 'reel-card';
+      const username = reel.profiles?.username || 'użytkownik';
+
+      card.innerHTML = `
+        <video class="reel-video" src="${reel.media_url}" autoplay loop muted onclick="this.muted = !this.muted"></video>
+        <div class="reel-overlay">
+          <div class="username">@${escapeHtml(username)}</div>
+          <div style="font-size: 14px; margin-top: 4px;">${escapeHtml(reel.caption || '')}</div>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  // --- POLUBIENIA ---
+  window.toggleLike = async function(postId, btn) {
+    const likesEl = document.getElementById(`likes-${postId}`);
+    let currentLikes = parseInt(likesEl.innerText) || 0;
+    
+    currentLikes += 1;
+    likesEl.innerText = currentLikes;
+    btn.classList.add('liked');
+
+    await supabase
+      .from('posts')
+      .update({ likes_count: currentLikes })
+      .eq('id', postId);
+  };
+
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+</script>
+</body>
+</html>
