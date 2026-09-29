@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>InstaClone z Rejestracją</title>
-  <!-- Supabase JS Client -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Supabase JS Client v2 (stabilna wersja CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
   <!-- Browser Image Compression -->
   <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.mjs" type="module"></script>
   
@@ -237,11 +237,10 @@
 
   // --- KONFIGURACJA SUPABASE ---
   const SUPABASE_URL = 'https://upwayjobffwfdlemicsne.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_hitnMVDOhkgjK0U51hNFRw_4n_ULj3'; 
   
-  // 👈 TUTAJ WKLEJ SWÓJ PUBLISHABLE KEY Z SUPABASE:
-  const SUPABASE_ANON_KEY = 'sb_publishable_hitnMVDOhkgjK0U51hNFRw_4n_ULj3V'; 
-  
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Inicjalizacja z obsługą globalnej biblioteki
+  const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
   let currentUser = null;
   let currentProfile = null;
@@ -249,7 +248,11 @@
 
   // Sprawdzanie sesji przy starcie
   document.addEventListener('DOMContentLoaded', async () => {
-    const { data: { session } } = await supabase.auth.getSession();
+    if (!supabaseClient) {
+      console.error("Supabase SDK not loaded properly.");
+      return;
+    }
+    const { data: { session } } = await supabaseClient.auth.getSession();
     if (session) {
       await setupUserSession(session.user);
     } else {
@@ -261,7 +264,7 @@
   async function setupUserSession(user) {
     currentUser = user;
     
-    let { data: profile } = await supabase
+    let { data: profile } = await supabaseClient
       .from('profiles')
       .select('*')
       .eq('id', user.id)
@@ -269,7 +272,7 @@
 
     if (!profile) {
       const defaultUsername = user.user_metadata?.full_name || user.user_metadata?.name || user.email.split('@')[0];
-      const { data: newProfile } = await supabase
+      const { data: newProfile } = await supabaseClient
         .from('profiles')
         .insert([{ id: user.id, username: defaultUsername }])
         .select()
@@ -313,11 +316,11 @@
           return;
         }
 
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabaseClient.auth.signUp({ email, password });
         if (error) throw error;
 
         if (data.user) {
-          const { error: profileError } = await supabase
+          const { error: profileError } = await supabaseClient
             .from('profiles')
             .insert([{ id: data.user.id, username: username }]);
             
@@ -325,7 +328,7 @@
           await setupUserSession(data.user);
         }
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
         await setupUserSession(data.user);
       }
@@ -335,7 +338,7 @@
   };
 
   window.handleLogout = async function() {
-    await supabase.auth.signOut();
+    await supabaseClient.auth.signOut();
     currentUser = null;
     currentProfile = null;
     document.getElementById('bottom-nav').style.display = 'none';
@@ -446,18 +449,18 @@
 
       progressText.innerText = 'Wysyłanie pliku...';
       const fileName = `${currentUser.id}/${Date.now()}_${file.name}`;
-      const { error: storageError } = await supabase.storage
+      const { error: storageError } = await supabaseClient.storage
         .from('posts')
         .upload(fileName, file);
 
       if (storageError) throw storageError;
 
-      const { data: publicUrlData } = supabase.storage
+      const { data: publicUrlData } = supabaseClient.storage
         .from('posts')
         .getPublicUrl(fileName);
 
       progressText.innerText = 'Zapisywanie posta...';
-      const { error: dbError } = await supabase
+      const { error: dbError } = await supabaseClient
         .from('posts')
         .insert([
           {
@@ -494,7 +497,7 @@
     const container = document.getElementById('feed-container');
     container.innerHTML = '<div class="empty-state">Ładowanie...</div>';
 
-    const { data: posts, error } = await supabase
+    const { data: posts, error } = await supabaseClient
       .from('posts')
       .select('*, profiles(username)')
       .order('created_at', { ascending: false });
@@ -543,7 +546,7 @@
     const container = document.getElementById('reels-container');
     container.innerHTML = '<div class="empty-state">Ładowanie rolek...</div>';
 
-    const { data: reels, error } = await supabase
+    const { data: reels, error } = await supabaseClient
       .from('posts')
       .select('*, profiles(username)')
       .eq('type', 'reel')
@@ -580,7 +583,7 @@
     likesEl.innerText = currentLikes;
     btn.classList.add('liked');
 
-    await supabase
+    await supabaseClient
       .from('posts')
       .update({ likes_count: currentLikes })
       .eq('id', postId);
